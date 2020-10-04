@@ -182,7 +182,7 @@ w_mtvec(uint64 x)
 }
 
 // use riscv's sv39 page table scheme.
-#define SATP_SV39 (8L << 60)
+#define SATP_SV39 (8UL << 60)
 
 #define MAKE_SATP(pagetable) (SATP_SV39 | (((uint64)pagetable) >> 12))
 
