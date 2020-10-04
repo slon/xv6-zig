@@ -13,7 +13,7 @@ const s_files = &[_][]const u8{
     "kernel/kernelvec.S",
 };
 
-const c_files = &[_][]const u8{
+const kernel_c_files = &[_][]const u8{
     "kernel/start.c",
     "kernel/console.c",
     "kernel/printf.c",
@@ -39,12 +39,29 @@ const c_files = &[_][]const u8{
     "kernel/virtio_disk.c",
 };
 
+const uprogs = &[_][]const u8{
+    "cat",
+    "echo",
+    "forktest",
+    "grep",
+    "init",
+    "kill",
+    "ln",
+    "ls",
+    "mkdir",
+    "rm",
+    "sh",
+    "stressfs",
+    "usertests",
+    "grind",
+    "wc",
+    "zombie",
+};
+
 pub fn build(b: *Builder) void {
-    // Standard target options allows the person running `zig build` to choose
-    // what target to build for. Here we do not override the defaults, which
-    // means any target is allowed, and the default is native. Other options
-    // for restricting supported target set are available.
-    // const target = b.standardTargetOptions(.{});
+    // Standard release options allow the person running `zig build` to select
+    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
+    const mode = b.standardReleaseOptions();
 
     const target = std.zig.CrossTarget {
         .cpu_arch = std.Target.Cpu.Arch.riscv64,
@@ -52,29 +69,48 @@ pub fn build(b: *Builder) void {
         .abi = std.Target.Abi.none,
     };
 
-    // Standard release options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
-    const mode = b.standardReleaseOptions();
-
-    const exe = b.addExecutable("xv6-zig", "src/main.zig");
-    exe.addIncludeDir(".");
-
-    exe.setLinkerScriptPath("kernel/kernel.ld");
-
+    const kernel = b.addExecutable("kernel", "src/main.zig");
+    kernel.addIncludeDir(".");
+    kernel.setLinkerScriptPath("kernel/kernel.ld");
     for (s_files) |file| {
-        exe.addAssemblyFile(file);
+        kernel.addAssemblyFile(file);
     }
-    for (c_files) |file| {
-        exe.addCSourceFile(file, c_flags);
+    for (kernel_c_files) |file| {
+        kernel.addCSourceFile(file, c_flags);
     }
+    kernel.setTarget(target);
+    kernel.setBuildMode(mode);
+    kernel.install();
 
-    exe.setTarget(target);
-    exe.setBuildMode(mode);
-    exe.install();
+    const ulib = b.addStaticLibrary("ulib", "src/ulib.zig");
+    ulib.addIncludeDir(".");
+    ulib.addCSourceFile("user/ulib.c", c_flags);
+    ulib.addCSourceFile("user/printf.c", c_flags);
+    ulib.addCSourceFile("user/umalloc.c", c_flags);
 
-    const run_cmd = exe.run();
-    run_cmd.step.dependOn(b.getInstallStep());
+    ulib.setTarget(target);
+    ulib.setBuildMode(mode);
+    ulib.install();
 
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
+    const ulib_slim = b.addStaticLibrary("ulibslim", "src/ulib.zig");
+    ulib_slim.addIncludeDir(".");
+    ulib_slim.addCSourceFile("user/ulib.c", c_flags);
+
+    ulib_slim.setTarget(target);
+    ulib_slim.setBuildMode(mode);
+    ulib_slim.install();
+
+    inline for (uprogs) |uprog| {
+        const c_file = "user/" ++ uprog ++ ".c";
+
+        const uprog_bin = b.addExecutable(uprog, "src/rt.zig");
+        uprog_bin.addIncludeDir(".");
+        uprog_bin.addCSourceFile(c_file, c_flags);
+
+        uprog_bin.linkLibrary(if (!std.mem.eql(u8, uprog, "forktest")) ulib else ulib_slim);
+
+        uprog_bin.setTarget(target);
+        uprog_bin.setBuildMode(mode);
+        uprog_bin.install();
+    }
 }
