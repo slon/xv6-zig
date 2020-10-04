@@ -100,6 +100,19 @@ pub fn build(b: *Builder) void {
     ulib_slim.setBuildMode(mode);
     ulib_slim.install();
 
+    const mkfs = b.addExecutable("mkfs", null);
+    mkfs.addIncludeDir(".");
+    mkfs.addCSourceFile("mkfs/mkfs.c", &[_][]const u8{});
+    mkfs.linkLibC();
+    mkfs.setBuildMode(mode);
+    mkfs.install();
+
+    const fs = mkfs.run();
+    fs.step.dependOn(&mkfs.step);
+    fs.addArg("fs.img");
+
+    b.getInstallStep().dependOn(&fs.step);
+
     inline for (uprogs) |uprog| {
         const c_file = "user/" ++ uprog ++ ".c";
 
@@ -112,5 +125,7 @@ pub fn build(b: *Builder) void {
         uprog_bin.setTarget(target);
         uprog_bin.setBuildMode(mode);
         uprog_bin.install();
+
+        fs.addArtifactArg(uprog_bin);
     }
 }
